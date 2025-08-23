@@ -1,9 +1,11 @@
+// android-app/app/build.gradle
 plugins {
     id "com.android.application"
     id "org.jetbrains.kotlin.android"
 }
 
 android {
+    namespace "com.example.aitorture"
     compileSdk 33
 
     defaultConfig {
