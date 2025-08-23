@@ -1,0 +1,2 @@
+-keep class com.example.aitorture.NativeBrain { *; }
+-keepclassmembers class com.example.aitorture.NativeBrain { *; }
