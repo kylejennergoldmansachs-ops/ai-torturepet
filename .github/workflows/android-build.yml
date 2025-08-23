@@ -11,7 +11,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      JAVA_HOME: /usr/lib/jvm/adoptopenjdk-11-hotspot-amd64
+      # location where we'll install Android SDK
+      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+      # ensure gradle uses reasonable heap on CI
+      GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx1536m"
 
     steps:
       - name: Checkout
@@ -23,22 +26,48 @@ jobs:
           java-version: '17'
           distribution: temurin
 
-      - name: Install Android SDK & NDK (via sdkmanager)
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 31
-          target: default
-          ndk: '21.4.7075529'
-          # This action requires a "script" input. Keep it minimal when only installing SDK/NDK.
-          script: echo "android sdk & ndk installed"
+      - name: Install system deps (wget, unzip)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends unzip wget
+
+      - name: Download Android commandline tools
+        run: |
+          mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools"
+          cd "${ANDROID_SDK_ROOT}/cmdline-tools"
+          # Download latest (2023/2024) commandline tools for Linux
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-10406996_latest.zip -O cmdline-tools.zip
+          unzip -q cmdline-tools.zip
+          # Move into 'latest' directory expected by sdkmanager path style
+          mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools/latest"
+          # contents extracted into a "cmdline-tools" folder; move them
+          mv cmdline-tools/* "${ANDROID_SDK_ROOT}/cmdline-tools/latest/" || true
+          rm -f cmdline-tools.zip
+
+      - name: Add sdkmanager to PATH
+        run: |
+          echo "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "${ANDROID_SDK_ROOT}/platform-tools" >> $GITHUB_PATH
+
+      - name: Install Android SDK packages (platform-tools, platform, build-tools, ndk)
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+        run: |
+          # Accept licenses non-interactively
+          yes | sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" --licenses || true
+          # Update repositories and install required packages
+          sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" "platform-tools" "platforms;android-31" "build-tools;33.0.2" "ndk;21.4.7075529" || true
+          # Ensure platform-tools available immediately
+          ls -la "${ANDROID_SDK_ROOT}"
 
       - name: Grant execute to Gradlew (module wrapper)
-        # The Android module is in android-app/, so make sure the wrapper there is runnable.
+        # The Android module is in android-app/, ensure the wrapper there is runnable.
         run: chmod +x ./android-app/gradlew
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon
         working-directory: android-app
+        run: |
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
