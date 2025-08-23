@@ -1,3 +1,4 @@
+// native-brain/include/reservoir.h
 #ifndef RESERVOIR_H
 #define RESERVOIR_H
 
@@ -40,6 +41,10 @@ private:
     std::vector<float> out_weights_;
 
     std::vector<float> readout_weights_;
+
+    // Simple in-memory word-cluster registry (non-persistent; kept while process runs)
+    std::vector<std::string> cluster_labels_;
+    std::vector<uint32_t> cluster_sizes_;
 };
 
 } // namespace brain
