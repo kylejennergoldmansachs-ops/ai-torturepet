@@ -11,8 +11,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # location where we'll install Android SDK
-      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+      # location where we'll install Android SDK (use workspace to avoid runner context issues)
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       # ensure gradle uses reasonable heap on CI
       GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx1536m"
 
@@ -35,7 +35,7 @@ jobs:
         run: |
           mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools"
           cd "${ANDROID_SDK_ROOT}/cmdline-tools"
-          # Download latest (2023/2024) commandline tools for Linux
+          # Download a stable command-line tools package for Linux
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-10406996_latest.zip -O cmdline-tools.zip
           unzip -q cmdline-tools.zip
           # Move into 'latest' directory expected by sdkmanager path style
@@ -53,15 +53,16 @@ jobs:
         env:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         run: |
+          # Ensure sdkmanager is available
+          sdkmanager --version
           # Accept licenses non-interactively
           yes | sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" --licenses || true
-          # Update repositories and install required packages
-          sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" "platform-tools" "platforms;android-31" "build-tools;33.0.2" "ndk;21.4.7075529" || true
-          # Ensure platform-tools available immediately
+          # Install required packages. Adjust versions if you need different ones.
+          sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" "platform-tools" "platforms;android-31" "build-tools;33.0.2" "ndk;21.4.7075529"
           ls -la "${ANDROID_SDK_ROOT}"
 
       - name: Grant execute to Gradlew (module wrapper)
-        # The Android module is in android-app/, ensure the wrapper there is runnable.
+        # Ensure the Gradle wrapper in the android-app module is executable.
         run: chmod +x ./android-app/gradlew
 
       - name: Build debug APK
