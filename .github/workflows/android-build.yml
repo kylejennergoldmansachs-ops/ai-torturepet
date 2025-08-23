@@ -29,9 +29,12 @@ jobs:
           api-level: 31
           target: default
           ndk: '21.4.7075529'
+          # This action requires a "script" input. Keep it minimal when only installing SDK/NDK.
+          script: echo "android sdk & ndk installed"
 
-      - name: Grant execute to Gradlew
-        run: chmod +x ./gradlew
+      - name: Grant execute to Gradlew (module wrapper)
+        # The Android module is in android-app/, so make sure the wrapper there is runnable.
+        run: chmod +x ./android-app/gradlew
 
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --no-daemon
