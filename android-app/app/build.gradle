@@ -37,12 +37,13 @@ android {
         }
     }
 
-    externalNativeBuild {
+        externalNativeBuild {
         cmake {
             path file('../../native-brain/CMakeLists.txt')
-            version "3.18.1"
+            // intentionally not pinning CMake version here so CI uses whichever stable CMake is available
         }
     }
+
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
