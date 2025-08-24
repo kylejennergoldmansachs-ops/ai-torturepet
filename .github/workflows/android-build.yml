@@ -17,7 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      # canonical SDK location in workspace to avoid runner context problems
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
 
     steps:
@@ -64,17 +63,13 @@ jobs:
           mkdir -p "${SDKROOT}"
 
           cd "${RUNNER_TEMP}"
-          # Download a stable commandline tools bundle
           ZIP="commandlinetools-linux.zip"
           echo "Downloading commandline tools..."
           curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip" -o "$ZIP"
 
-          # Unpack into a temporary dir and normalize to cmdline-tools/latest layout
           mkdir -p "${SDKROOT}/cmdline-tools/tmp"
           unzip -q "$ZIP" -d "${SDKROOT}/cmdline-tools/tmp"
-          # Some releases create a nested 'cmdline-tools' folder; move contents to latest
           mkdir -p "${SDKROOT}/cmdline-tools/latest"
-          shopt -s dotglob || true
           mv "${SDKROOT}/cmdline-tools/tmp/"* "${SDKROOT}/cmdline-tools/latest/" || true
           rm -rf "${SDKROOT}/cmdline-tools/tmp"
           rm -f "$ZIP"
@@ -84,21 +79,19 @@ jobs:
 
           export ANDROID_HOME="${SDKROOT}"
           export ANDROID_SDK_ROOT="${SDKROOT}"
-          # Install packages matching compileSdk=33
+
           yes | "${SDKMANAGER_CMD}" --sdk_root="${SDKROOT}" "platform-tools" "platforms;android-33" "build-tools;33.0.2" "cmake;3.22.1" "ndk;21.4.7075529" || true
           yes | "${SDKMANAGER_CMD}" --sdk_root="${SDKROOT}" --licenses || true
 
-          # expose SDK locations for later steps
           echo "ANDROID_HOME=${SDKROOT}" >> "${GITHUB_ENV}"
           echo "ANDROID_SDK_ROOT=${SDKROOT}" >> "${GITHUB_ENV}"
           echo "${SDKROOT}/platform-tools" >> "${GITHUB_PATH}"
           echo "${SDKROOT}/build-tools/33.0.2" >> "${GITHUB_PATH}"
-          echo "Installed SDK to ${SDKROOT}"
-      
+
       - name: Debug: list SDK and wrapper files
         run: |
           echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}"
-          echo "Listing cmdline-tools/*:"
+          echo "Listing cmdline-tools contents:"
           ls -la "${ANDROID_SDK_ROOT}/cmdline-tools" || true
           echo "Listing android-app/gradle/wrapper:"
           ls -la android-app/gradle/wrapper || true
