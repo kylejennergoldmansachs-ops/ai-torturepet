@@ -1,0 +1,11 @@
+/*
+ Minimal root build.gradle - repositories are defined in settings.gradle
+ Keep root build file minimal to avoid repository conflicts with settings.gradle
+*/
+plugins {
+  // No root plugins needed; modules define theirs
+}
+
+task clean(type: Delete) {
+  delete rootProject.buildDir
+}
