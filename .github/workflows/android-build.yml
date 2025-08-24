@@ -1,4 +1,4 @@
-name: Android CI - Build Debug APK
+name: Build APK (adapted - android-app wrapper)
 
 on:
   push:
@@ -7,71 +7,118 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      # location where we'll install Android SDK (use workspace to avoid runner context issues)
-      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
-      # ensure gradle uses reasonable heap on CI
-      GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx1536m"
+    timeout-minutes: 60
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
 
-      - name: Set up JDK 17
+      - name: Setup JDK 17 (Temurin)
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
           distribution: temurin
+          java-version: 17
 
-      - name: Install system deps (wget, unzip)
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', 'android-app/**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Ensure android-app gradle wrapper is present & mark for logs
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends unzip wget
+          if [ -f ./android-app/gradlew ]; then
+            echo "android-app/gradlew: present"
+          else
+            echo "android-app/gradlew: MISSING - ensure you uploaded gradlew and gradle/wrapper/ files into android-app/"
+            ls -la ./android-app || true
+            exit 1
+          fi
 
-      - name: Download Android commandline tools
-        run: |
-          mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools"
-          cd "${ANDROID_SDK_ROOT}/cmdline-tools"
-          # Download a stable command-line tools package for Linux
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-10406996_latest.zip -O cmdline-tools.zip
-          unzip -q cmdline-tools.zip
-          # Move into 'latest' directory expected by sdkmanager path style
-          mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools/latest"
-          # contents extracted into a "cmdline-tools" folder; move them
-          mv cmdline-tools/* "${ANDROID_SDK_ROOT}/cmdline-tools/latest/" || true
-          rm -f cmdline-tools.zip
-
-      - name: Add sdkmanager to PATH
-        run: |
-          echo "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "${ANDROID_SDK_ROOT}/platform-tools" >> $GITHUB_PATH
-
-      - name: Install Android SDK packages (platform-tools, platform, build-tools, ndk)
-        env:
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
-        run: |
-          # Ensure sdkmanager is available
-          sdkmanager --version
-          # Accept licenses non-interactively
-          yes | sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" --licenses || true
-          # Install required packages. Adjust versions if you need different ones.
-          sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" "platform-tools" "platforms;android-31" "build-tools;33.0.2" "ndk;21.4.7075529"
-          ls -la "${ANDROID_SDK_ROOT}"
-
-      - name: Grant execute to Gradlew (module wrapper)
-        # Ensure the Gradle wrapper in the android-app module is executable.
+      - name: Make android-app gradlew executable
         run: chmod +x ./android-app/gradlew
 
-      - name: Build debug APK
-        working-directory: android-app
+      - name: Install Android command line tools and SDK components (platform 34)
         run: |
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+          set -euo pipefail
 
-      - name: Upload debug APK
+          # canonical SDK install path for this runner
+          SDKROOT="${RUNNER_TEMP}/android-sdk"
+          mkdir -p "${SDKROOT}"
+
+          cd "${RUNNER_TEMP}"
+          ZIP="commandlinetools-linux.zip"
+          echo "Downloading Android command-line tools..."
+          curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip" -o "$ZIP"
+
+          mkdir -p "${SDKROOT}/cmdline-tools/latest"
+          unzip -q "$ZIP" -d "${SDKROOT}/cmdline-tools/latest"
+
+          # handle nested folder layout produced by some tool versions
+          if [ -d "${SDKROOT}/cmdline-tools/latest/cmdline-tools" ]; then
+            mv "${SDKROOT}/cmdline-tools/latest/cmdline-tools/"* "${SDKROOT}/cmdline-tools/latest/" || true
+            rmdir "${SDKROOT}/cmdline-tools/latest/cmdline-tools" || true
+          fi
+
+          SDKMANAGER_CMD="${SDKROOT}/cmdline-tools/latest/bin/sdkmanager"
+          chmod +x "${SDKMANAGER_CMD}"
+
+          # export canonical SDK env for this step so sdkmanager uses same path
+          export ANDROID_HOME="${SDKROOT}"
+          export ANDROID_SDK_ROOT="${SDKROOT}"
+
+          yes | "${SDKMANAGER_CMD}" --sdk_root="${SDKROOT}" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "cmdline-tools;latest" "ndk;21.4.7075529" || true
+          yes | "${SDKMANAGER_CMD}" --sdk_root="${SDKROOT}" --licenses || true
+
+          # persist a single canonical SDK location for subsequent workflow steps
+          echo "ANDROID_HOME=${SDKROOT}" >> "${GITHUB_ENV}"
+          echo "ANDROID_SDK_ROOT=${SDKROOT}" >> "${GITHUB_ENV}"
+
+          # ensure build-tools and platform-tools are in PATH for the job
+          echo "${SDKROOT}/platform-tools" >> "${GITHUB_PATH}"
+          echo "${SDKROOT}/build-tools/34.0.0" >> "${GITHUB_PATH}"
+
+          echo "Android SDK components installed to ${SDKROOT}"
+
+      - name: Print Java & Gradle versions (for logs)
+        run: |
+          java -version || true
+          ./android-app/gradlew --version || true
+
+      - name: Build APKs (debug + release) using android-app wrapper
+        run: |
+          set -euo pipefail
+          echo "Running gradlew from android-app/"
+          ./android-app/gradlew -p android-app assembleDebug assembleRelease --stacktrace --no-daemon
+        env:
+          JAVA_TOOL_OPTIONS: "-Dfile.encoding=UTF8"
+
+      - name: Show APK outputs
+        run: |
+          echo "Debug APK:"
+          ls -la android-app/app/build/outputs/apk/debug || true
+          echo "Release APK:"
+          ls -la android-app/app/build/outputs/apk/release || true
+
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: android-app/app/build/outputs/apk/debug/app-debug.apk
+          name: app-apks
+          path: |
+            android-app/app/build/outputs/apk/debug/*.apk
+            android-app/app/build/outputs/apk/release/*.apk
