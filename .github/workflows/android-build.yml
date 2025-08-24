@@ -62,33 +62,61 @@ jobs:
           echo "Installing Android SDK to ${SDKROOT}"
           mkdir -p "${SDKROOT}"
 
+          # temp extract area
+          TMPDIR="${RUNNER_TEMP}/cmdline-tools-unpack"
+          rm -rf "${TMPDIR}"
+          mkdir -p "${TMPDIR}"
           cd "${RUNNER_TEMP}"
+
           ZIP="commandlinetools-linux.zip"
           echo "Downloading commandline tools..."
           curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip" -o "$ZIP"
 
-          mkdir -p "${SDKROOT}/cmdline-tools/tmp"
-          unzip -q "$ZIP" -d "${SDKROOT}/cmdline-tools/tmp"
-          mkdir -p "${SDKROOT}/cmdline-tools/latest"
-          mv "${SDKROOT}/cmdline-tools/tmp/"* "${SDKROOT}/cmdline-tools/latest/" || true
-          rm -rf "${SDKROOT}/cmdline-tools/tmp"
-          rm -f "$ZIP"
+          echo "Unpacking to ${TMPDIR}..."
+          unzip -q "$ZIP" -d "${TMPDIR}"
 
-          SDKMANAGER_CMD="${SDKROOT}/cmdline-tools/latest/bin/sdkmanager"
-          chmod +x "${SDKMANAGER_CMD}"
+          # Find sdkmanager anywhere under the unpack dir
+          SDKMANAGER_PATH=$(find "${TMPDIR}" -type f -name "sdkmanager" -print -quit || true)
+          if [ -z "${SDKMANAGER_PATH}" ]; then
+            echo "Error: sdkmanager not found in the downloaded commandline-tools package." >&2
+            echo "Directory listing of unpack dir:" >&2
+            find "${TMPDIR}" -maxdepth 3 -type f -print -exec ls -la {} \; || true
+            exit 1
+          fi
+
+          echo "Found sdkmanager at: ${SDKMANAGER_PATH}"
+          # sdk_tools_root is the directory that contains 'bin' (i.e. parent of 'bin')
+          SDK_TOOLS_ROOT="$(dirname "$(dirname "${SDKMANAGER_PATH}")")"
+          echo "Tool root is: ${SDK_TOOLS_ROOT}"
+
+          # Prepare target latest dir and copy everything from found tool root
+          TARGET="${SDKROOT}/cmdline-tools/latest"
+          mkdir -p "${TARGET}"
+          cp -R "${SDK_TOOLS_ROOT}/"* "${TARGET}/"
+
+          # Ensure sdkmanager is runnable
+          chmod +x "${TARGET}/bin/sdkmanager" || true
+
+          # cleanup
+          rm -rf "${TMPDIR}"
+          rm -f "$ZIP" || true
+
+          SDKMANAGER_CMD="${TARGET}/bin/sdkmanager"
+          echo "Using sdkmanager at ${SDKMANAGER_CMD}"
 
           export ANDROID_HOME="${SDKROOT}"
           export ANDROID_SDK_ROOT="${SDKROOT}"
 
+          # Install packages matching compileSdk=33 (adjust if your project uses a different compileSdk)
           yes | "${SDKMANAGER_CMD}" --sdk_root="${SDKROOT}" "platform-tools" "platforms;android-33" "build-tools;33.0.2" "cmake;3.22.1" "ndk;21.4.7075529" || true
           yes | "${SDKMANAGER_CMD}" --sdk_root="${SDKROOT}" --licenses || true
 
+          # expose SDK locations for later steps
           echo "ANDROID_HOME=${SDKROOT}" >> "${GITHUB_ENV}"
           echo "ANDROID_SDK_ROOT=${SDKROOT}" >> "${GITHUB_ENV}"
           echo "${SDKROOT}/platform-tools" >> "${GITHUB_PATH}"
           echo "${SDKROOT}/build-tools/33.0.2" >> "${GITHUB_PATH}"
 
-      
       - name: Print Java & Gradle versions (for logs)
         run: |
           java -version || true
