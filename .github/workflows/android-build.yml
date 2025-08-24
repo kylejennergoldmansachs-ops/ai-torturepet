@@ -15,7 +15,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
+    env:
+      # canonical SDK location in workspace to avoid runner context problems
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
 
     steps:
       - name: Checkout repository
@@ -40,60 +43,65 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: Ensure android-app gradle wrapper is present & mark for logs
+      - name: Ensure android-app gradle wrapper exists
         run: |
           if [ -f ./android-app/gradlew ]; then
             echo "android-app/gradlew: present"
           else
-            echo "android-app/gradlew: MISSING - ensure you uploaded gradlew and gradle/wrapper/ files into android-app/"
-            ls -la ./android-app || true
+            echo "android-app/gradlew: MISSING - upload gradlew + gradle/wrapper/* into android-app/" >&2
+            ls -la android-app || true
             exit 1
           fi
 
       - name: Make android-app gradlew executable
         run: chmod +x ./android-app/gradlew
 
-      - name: Install Android command line tools and SDK components (platform 34)
+      - name: Install Android command line tools + SDK components (robust)
         run: |
           set -euo pipefail
-
-          # canonical SDK install path for this runner
-          SDKROOT="${RUNNER_TEMP}/android-sdk"
+          SDKROOT="${ANDROID_SDK_ROOT}"
+          echo "Installing Android SDK to ${SDKROOT}"
           mkdir -p "${SDKROOT}"
 
           cd "${RUNNER_TEMP}"
+          # Download a stable commandline tools bundle
           ZIP="commandlinetools-linux.zip"
-          echo "Downloading Android command-line tools..."
+          echo "Downloading commandline tools..."
           curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip" -o "$ZIP"
 
+          # Unpack into a temporary dir and normalize to cmdline-tools/latest layout
+          mkdir -p "${SDKROOT}/cmdline-tools/tmp"
+          unzip -q "$ZIP" -d "${SDKROOT}/cmdline-tools/tmp"
+          # Some releases create a nested 'cmdline-tools' folder; move contents to latest
           mkdir -p "${SDKROOT}/cmdline-tools/latest"
-          unzip -q "$ZIP" -d "${SDKROOT}/cmdline-tools/latest"
-
-          # handle nested folder layout produced by some tool versions
-          if [ -d "${SDKROOT}/cmdline-tools/latest/cmdline-tools" ]; then
-            mv "${SDKROOT}/cmdline-tools/latest/cmdline-tools/"* "${SDKROOT}/cmdline-tools/latest/" || true
-            rmdir "${SDKROOT}/cmdline-tools/latest/cmdline-tools" || true
-          fi
+          shopt -s dotglob || true
+          mv "${SDKROOT}/cmdline-tools/tmp/"* "${SDKROOT}/cmdline-tools/latest/" || true
+          rm -rf "${SDKROOT}/cmdline-tools/tmp"
+          rm -f "$ZIP"
 
           SDKMANAGER_CMD="${SDKROOT}/cmdline-tools/latest/bin/sdkmanager"
           chmod +x "${SDKMANAGER_CMD}"
 
-          # export canonical SDK env for this step so sdkmanager uses same path
           export ANDROID_HOME="${SDKROOT}"
           export ANDROID_SDK_ROOT="${SDKROOT}"
-
-          yes | "${SDKMANAGER_CMD}" --sdk_root="${SDKROOT}" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "cmdline-tools;latest" "ndk;21.4.7075529" || true
+          # Install packages matching compileSdk=33
+          yes | "${SDKMANAGER_CMD}" --sdk_root="${SDKROOT}" "platform-tools" "platforms;android-33" "build-tools;33.0.2" "cmake;3.22.1" "ndk;21.4.7075529" || true
           yes | "${SDKMANAGER_CMD}" --sdk_root="${SDKROOT}" --licenses || true
 
-          # persist a single canonical SDK location for subsequent workflow steps
+          # expose SDK locations for later steps
           echo "ANDROID_HOME=${SDKROOT}" >> "${GITHUB_ENV}"
           echo "ANDROID_SDK_ROOT=${SDKROOT}" >> "${GITHUB_ENV}"
-
-          # ensure build-tools and platform-tools are in PATH for the job
           echo "${SDKROOT}/platform-tools" >> "${GITHUB_PATH}"
-          echo "${SDKROOT}/build-tools/34.0.0" >> "${GITHUB_PATH}"
-
-          echo "Android SDK components installed to ${SDKROOT}"
+          echo "${SDKROOT}/build-tools/33.0.2" >> "${GITHUB_PATH}"
+          echo "Installed SDK to ${SDKROOT}"
+      
+      - name: Debug: list SDK and wrapper files
+        run: |
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}"
+          echo "Listing cmdline-tools/*:"
+          ls -la "${ANDROID_SDK_ROOT}/cmdline-tools" || true
+          echo "Listing android-app/gradle/wrapper:"
+          ls -la android-app/gradle/wrapper || true
 
       - name: Print Java & Gradle versions (for logs)
         run: |
