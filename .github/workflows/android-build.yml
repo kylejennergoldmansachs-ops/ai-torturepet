@@ -88,14 +88,7 @@ jobs:
           echo "${SDKROOT}/platform-tools" >> "${GITHUB_PATH}"
           echo "${SDKROOT}/build-tools/33.0.2" >> "${GITHUB_PATH}"
 
-      - name: Debug: list SDK and wrapper files
-        run: |
-          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}"
-          echo "Listing cmdline-tools contents:"
-          ls -la "${ANDROID_SDK_ROOT}/cmdline-tools" || true
-          echo "Listing android-app/gradle/wrapper:"
-          ls -la android-app/gradle/wrapper || true
-
+      
       - name: Print Java & Gradle versions (for logs)
         run: |
           java -version || true
