@@ -24,5 +24,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "twisted-phone"
+rootProject.name = "ai-torturepet"
 include(":app")
+
