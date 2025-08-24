@@ -1,21 +1,4 @@
-pluginManagement {
-    repositories {
-        gradlePluginPortal()
-        google()
-        mavenCentral()
-    }
-    // declare the plugin versions so the 'plugins' DSL in modules can resolve
-    plugins {
-        id "com.android.application" version "8.1.1"
-        id "org.jetbrains.kotlin.android" version "1.9.0"
-    }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-rootProject.name = "ai-torturepet"
-include(":app")
+org.gradle.jvmargs=-Xmx2048m
+kotlin.code.style=official
+android.useAndroidX=true
+android.enableJetifier=true
