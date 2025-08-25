@@ -2,6 +2,7 @@ package com.example.aitorture
 
 import android.app.Activity
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Button
@@ -46,7 +47,14 @@ class MainActivity : Activity() {
             tv.append("\nNative init error: ${e.message}")
         }
 
-        startService(Intent(this, ForegroundBrainService::class.java))
+        // Start the foreground service correctly depending on OS level
+        val svcIntent = Intent(this, ForegroundBrainService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // On O+ use startForegroundService to ensure the system allows a foreground service start
+            startForegroundService(svcIntent)
+        } else {
+            startService(svcIntent)
+        }
 
         btn.setOnClickListener {
             activityScope.launch {
@@ -125,7 +133,7 @@ RECENT_USER_TEXT: $recentUserText
             .build()
         client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) {
-                throw Exception("Agent invoke failed HTTP ${'$'}{resp.code}: ${'$'}{resp.message}")
+                throw Exception("Agent invoke failed HTTP ${resp.code}: ${resp.message}")
             }
             val text = resp.body?.string() ?: ""
             return text
