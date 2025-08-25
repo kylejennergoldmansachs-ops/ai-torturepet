@@ -1,7 +1,11 @@
 <manifest package="com.example.aitorture"
     xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Required for calling cloud APIs -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Required to call startForeground on a Service (API 28+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <application
         android:allowBackup="true"
